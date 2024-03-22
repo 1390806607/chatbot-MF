@@ -1,0 +1,72 @@
+{
+    "OpenAI": {
+        "api_key": "",
+        "gpt_model": "gpt-3.5-turbo",
+        "asr_model": "whisper-1",
+        "tts_model": "tts-1",
+        "tts_voice": "nova"
+    },
+    "ZhipuAI": {
+        "api_key": "",
+        "nlg_model": "glm-4"
+    },
+    "Aliyun": {
+        "api_key": "",
+        "nlg_model": "qwen-max"
+    },
+    "Baidu": {
+        "nlg": {
+            "api_key": "",
+            "secret_key": "",
+            "access_token": "",
+            "model": "ERNIE-Bot-8K"
+        },
+        "asr": {
+            "app_id": "",
+            "api_key": "",
+            "secret_key": "",
+            "model": "baidu-1"
+        },
+        "tts": {
+            "api_key": "",
+            "secret_key": "",
+            "access_token": "",
+            "voice": "��С��"
+        }
+    },
+    "XFyun": {
+        "app_id": "",
+        "api_secret": "",
+        "api_key": "",
+        "nlg_model": "v3.5"
+    },
+    "Google": {
+        "api_key": "",
+        "nlg_model": "gemini-pro"
+    },
+    "Waltz": {
+        "mode": "remote",
+        "model": "Waltz",
+        "host": "",
+        "secret": ""
+    },
+    "Whisper": {
+        "mode": "remote",
+        "model": "Whiper-Base-Finetune",
+        "host": "",
+        "secret": ""
+    },
+    "FastSpeech": {
+        "mode": "remote",
+        "model": "FastSpeech2",
+        "host": "",
+        "secret": ""
+    },
+    "BertVITS2": {
+        "mode": "remote",
+        "model": "Bert-VITS2-Keqing",
+        "voice": "����",
+        "host": "",
+        "secret": ""
+    }
+}
