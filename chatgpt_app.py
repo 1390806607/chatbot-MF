@@ -80,6 +80,8 @@ with gr.Blocks(theme=gr.themes.Soft(), title="Chatbot Client", css="./assets/css
                 docs.extend(doc)
             return doc
 
+
+
         def autoChat(files: list, prompt: str, message: str, chat_history: list) -> tuple[str, list[list[str, str]]]:
             """
             自动根据当前前端信息，选择聊天方式进行聊天
@@ -142,7 +144,7 @@ with gr.Blocks(theme=gr.themes.Soft(), title="Chatbot Client", css="./assets/css
         )
 
         submit_button.click(autoChat, [upfile,prompt,text_input, bot_component], [text_input, bot_component, upfile])
-        # text_input.submit(textChat, [upfile,text_input, bot_component], [text_input, bot_component])
+        text_input.submit(autoChat, [upfile,prompt,text_input, bot_component], [text_input, bot_component, upfile])
 
         # 切换模型
         chatgpt_switch.change(switchchatgpt, [chatgpt_switch], [chatgpt_switch])
