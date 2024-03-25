@@ -1,5 +1,6 @@
 """本文件为整个项目的主文件，并使用gradio搭建界面"""
 # https://github.com/GaiZhenbiao/ChuanhuChatGPT
+from openai import RateLimitError
 import subprocess
 import traceback
 from fastapi import FastAPI, Depends, Request
@@ -34,7 +35,10 @@ with gr.Blocks(theme=gr.themes.Soft(), title="Chatbot Client", css="./assets/css
                     'gpt-4-turbo-preview',
                     'gpt-4-1106-preview',
                     'gpt-4-vision-preview',
-                    'gpt-4-1106-vision-preview'
+                    'gpt-4-1106-vision-preview',
+                    'moonshot-v1-8k',
+                    'moonshot-v1-32k',
+                    'moonshot-v1-128k'
                 ],
                 value=chatgpt_service.model, interactive=True,
                 label="选择chatgpt模型", 
@@ -49,7 +53,7 @@ with gr.Blocks(theme=gr.themes.Soft(), title="Chatbot Client", css="./assets/css
             # submit_files_button = gr.Button(value="确定prompt", size="sm", min_width=80, elem_id="submit_files_button")
 
         with gr.Column(scale=5, elem_id="chatPanel"):
-            bot_component = gr.Chatbot(min_width=100,label=chatgpt_service.model, avatar_images=utils.getAvatars(), elem_id="chatbot")
+            bot_component = gr.Chatbot(min_width=100,label='聊天框', avatar_images=utils.getAvatars(), elem_id="chatbot")
             with gr.Row(elem_id="inputPanel"):
                 text_input = gr.Textbox(placeholder="点击输入", show_label=False, scale=4, elem_id="textInput")
                 submit_button = gr.Button(value="发送", size="sm", min_width=80, elem_id="submitButton")
@@ -104,9 +108,11 @@ with gr.Blocks(theme=gr.themes.Soft(), title="Chatbot Client", css="./assets/css
                 new_message = prompt + '\n' + message
             else:
                 new_message = message
-
-            bot_message = chatgpt_service.continuedQuery(new_message, chat_history)
-            chat_history.append((message, bot_message))
+            try:
+                bot_message = chatgpt_service.continuedQuery(new_message, chat_history)
+                chat_history.append((message, bot_message))
+            except Exception as e:
+                gr.Warning(e.body['message'])
             return "", chat_history, []
         
         def switchchatgpt(select_service_name: str):
@@ -121,9 +127,22 @@ with gr.Blocks(theme=gr.themes.Soft(), title="Chatbot Client", css="./assets/css
                 return current_service_name
             else:  # 尝试切换模型
                 try:
-                    if select_service_name in ['gpt-3.5-turbo','gpt-3.5-turbo-16k','gpt-4']: 
+                    if select_service_name in [
+                        'gpt-3.5-turbo',
+                        'gpt-3.5-turbo-16k',
+                        'gpt-4',
+                        'gpt-4-0125-preview',
+                        'gpt-4-turbo-preview',
+                        'gpt-4-1106-preview',
+                        'gpt-4-vision-preview',
+                        'gpt-4-1106-vision-preview',
+                        'moonshot-v1-8k',
+                        'moonshot-v1-32k',
+                        'moonshot-v1-128k'
+                    ]: 
                         Configs["Chatgpt"]['gpt_model'] = select_service_name
                         temp_service = ChatGPT(utils.Configs["Chatgpt"])
+
                     else:  # 未知的模型选择，不执行切换
                         gr.Warning(f"未知的chatgpt模型，将不进行切换，当前：{current_service_name}")
                         return current_service_name
@@ -151,5 +170,5 @@ with gr.Blocks(theme=gr.themes.Soft(), title="Chatbot Client", css="./assets/css
  
 app = gr.mount_gradio_app(app, chat_demo, path="/chatbot")
 if __name__ == "__main__":
-    uvicorn.run(app, host='127.0.0.0')
+    uvicorn.run(app, host='127.0.0.1')
     # uvicorn.run(app)

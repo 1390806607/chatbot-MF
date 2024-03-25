@@ -142,11 +142,17 @@ class ChatGPT(NLGBase):
 
     def __init__(self, OpenAI_config: dict, prompt: str = None):
         super().__init__(NLGEnum.ChatGPT, OpenAI_config.get("gpt_model", "gpt-3.5-turbo"), prompt)
-        self.api_key = OpenAI_config.get("api_key", None)
+        if 'moonshot' in self.model:
+            self.api_key = OpenAI_config.get("moonshot_api_key", None)
+        else:
+            self.api_key = OpenAI_config.get("api_key", None)
 
         if not self.api_key:
             raise ValueError("OpenAI api_key is not set! Please check your 'config.json' file.")
-        self.host = OpenAI(api_key=self.api_key)
+        self.host = OpenAI(
+            api_key=self.api_key,
+            base_url= "https://api.moonshot.cn/v1" if 'moonshot' in self.model else None,
+        )
         self.checkConnection()
 
     def singleQuery(self, message: str, prompt: str = None) -> str:
@@ -185,18 +191,18 @@ class ChatGPT(NLGBase):
         :return: bool 是否连接成功
         """
         try:
-            print(f"Bearer {self.api_key}")
             response = requests.post(
-                url="https://api.openai.com/v1/chat/completions",
+                url="https://api.openai.com/v1/chat/completions" if 'moonshot' not in self.model else 'https://api.moonshot.cn/v1/chat/completions',
                 headers={
                     "Content-Type": "application/json",
                     "Authorization": f"Bearer {self.api_key}"
                 },
                 json={
-                    "model": "gpt-3.5-turbo",
+                    "model": "gpt-3.5-turbo" if 'moonshot' not in self.model else self.model,
                     "messages": [Message(role="user", content="Say this is a test!")]
                 },
             )
+            print()
             if response.status_code != 200:
                 raise ConnectionError(f"Connect to {self.model} failed, please check your network and API status.")
             else:
