@@ -1,6 +1,6 @@
 """本文件为整个项目的主文件，并使用gradio搭建界面"""
 # https://github.com/GaiZhenbiao/ChuanhuChatGPT
-from openai import RateLimitError
+from openai import RateLimitError,APIConnectionError
 import subprocess
 import traceback
 from fastapi import FastAPI, Depends, Request
@@ -111,9 +111,13 @@ with gr.Blocks(theme=gr.themes.Soft(), title="Chatbot Client", css="./assets/css
             try:
                 bot_message = chatgpt_service.continuedQuery(new_message, chat_history)
                 chat_history.append((message, bot_message))
-            except Exception as e:
+            except RateLimitError as e:
                 gr.Warning(e.body['message'])
-            return "", chat_history, []
+            except APIConnectionError as e:
+                gr.Warning('Api连接错误')
+            except Exception as e:
+                gr.Warning(e)
+            return "", chat_history, files
         
         def switchchatgpt(select_service_name: str):
             """
@@ -170,5 +174,4 @@ with gr.Blocks(theme=gr.themes.Soft(), title="Chatbot Client", css="./assets/css
  
 app = gr.mount_gradio_app(app, chat_demo, path="/chatbot")
 if __name__ == "__main__":
-    uvicorn.run(app, host='127.0.0.1')
-    # uvicorn.run(app)
+    uvicorn.run(app)
