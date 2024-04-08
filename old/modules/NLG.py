@@ -9,13 +9,16 @@ from base64 import b64encode
 from random import randint
 from ssl import CERT_NONE as SSL_CERT_NONE
 from urllib.parse import urljoin, urlparse, urlencode
-
+from modules.utils import get_first_history_name, save_file, HISTORY_DIR
 import google.api_core.exceptions
 import requests
 from websocket import WebSocketApp
-
+import os
 from modules.utils import NLGEnum, Configs, Message  # getRFC1123, getMacAddress
 from openai import OpenAI
+import logging
+import shutil
+
 
 class NLGBase:
     """聊天机器人基类，建议在进行聊天机器人开发时继承该类"""
@@ -25,10 +28,10 @@ class NLGBase:
     except ImportError:
         tokenEncoding = None
 
-    def __init__(self, nlg_type: NLGEnum, model: str, prompt: str = None):
+    def __init__(self, nlg_type: NLGEnum, model: str, system_prompt: str = None):
         self.type = nlg_type  # 机器人类型
         self.model = model  # 机器人模型
-        self.prompt = prompt  # 默认提示语(用于指定机器人的身份，有助于提高针对特定领域问题的效果)，优先级低于查询时传入的prompt
+        self.system_prompt = system_prompt  # 默认提示语(用于指定机器人的身份，有助于提高针对特定领域问题的效果)，优先级低于查询时传入的prompt
 
     @abstractmethod
     def singleQuery(self, message: str, prompt: str = None) -> str:
@@ -62,7 +65,7 @@ class NLGBase:
         对于多数未设计检查连接状态的API，可参考OpenAI的做法：直接让后端回复一句简单的话，若回复成功则自然连接成功。
         """
 
-    def converterHistory(self, history: [[str, str]], prompt: str = None) -> list[Message]:
+    def converterHistory(self, history: [[str, str]]) -> list[Message]:
         """
         将[[str, str]...]形式的历史记录转换为[{"role": "user", "content": ""}, {"role": "assistant", "content": ""}...]的格式，
         使用场景是将gradio的Chatbot聊天记录格式转换为ChatGPT/ChatGLM3的聊天记录格式
@@ -71,7 +74,8 @@ class NLGBase:
         :return: [{"role": "user", "content": ""}, {"role": "assistant", "content": ""}...]的格式的历史记录，注意，该结果不包括
         本次的用户输入，仅转换了历史记录
         """
-        sessionPrompt = prompt if prompt else self.prompt
+
+        sessionPrompt = self.system_prompt
         sessionHistory = [Message(role="system", content=sessionPrompt)] if sessionPrompt else []
         for chat in history:
             sessionHistory.append(Message(role="user", content=chat[0]))
@@ -153,37 +157,169 @@ class ChatGPT(NLGBase):
             api_key=self.api_key,
             base_url= "https://api.moonshot.cn/v1" if 'moonshot' in self.model else None,
         )
+        self.chatbot = []
+        self.user_name = 'system'
+        self.temperature = 0
+        self.history_file_path = get_first_history_name('system')
         self.checkConnection()
 
-    def singleQuery(self, message: str, prompt: str = None) -> str:
-        session_prompt = prompt if prompt else self.prompt
-        session_message = [
-            Message(role="system", content=session_prompt),
-            Message(role="user", content=message)
-        ] if session_prompt else [
-            Message(role="user", content=message)
-        ]
-        session = self.host.chat.completions.create(
-            model=self.model,
-            messages=session_message
-        )
-        return session.choices[0].message.content
+    # def singleQuery(self, message: str, prompt: str = None) -> str:
+    #     if prompt:
+    #         self.prompt = prompt
+    #         session_prompt = prompt
+    #     else:
+    #         session_prompt = self.prompt
+    #     session_message = [
+    #         Message(role="system", content=session_prompt),
+    #         Message(role="user", content=message)
+    #     ] if session_prompt else [
+    #         Message(role="user", content=message)
+    #     ]
+    #     session = self.host.chat.completions.create(
+    #         model=self.model,
+    #         messages=session_message
+    #     )
+    #     return session.choices[0].message.content
     
 
 
-    def continuedQuery(self, message: str, history: list[list[str, str]], prompt: str = None):
-        session_history = self.converterHistory(history, prompt)
-        session_history.append(Message(role="user", content=message))
+    def continuedQuery(
+            self,
+            files_data: str, 
+            prompt: str,
+            message: str, 
+            history: list[list[str, str]], 
+    ):  
+        new_message = files_data + '\n' + prompt + '\n' + message
+        session_history = self.converterHistory(history)
+        session_history.append(Message(role="user", content=new_message))
         
         session = self.host.chat.completions.create(
             model=self.model,
             messages=session_history,
-            temperature = 0,
+            temperature = self.temperature,
 
         )
+        self.history = history
+        self.chatbot = history
+        self.chatbot.append((message, session.choices[0].message.content))
+
+        self.auto_save(chatbot=self.chatbot)
         return session.choices[0].message.content
 
- 
+    def auto_save(self, chatbot=None):
+        if chatbot is not None:
+            save_file(self.history_file_path, self, chatbot)
+
+
+    def load_chat_history(self, new_history_file_path=None):
+        logging.debug(f"{self.user_name} 加载对话历史中……")
+        if new_history_file_path is not None:
+            if type(new_history_file_path) != str:
+                # copy file from new_history_file_path.name to os.path.join(HISTORY_DIR, self.user_name)
+                new_history_file_path = new_history_file_path.name
+                shutil.copyfile(
+                    new_history_file_path,
+                    os.path.join(
+                        HISTORY_DIR,
+                        self.user_name,
+                        os.path.basename(new_history_file_path),
+                    ),
+                )
+                self.history_file_path = os.path.basename(new_history_file_path)
+            else:
+                self.history_file_path = new_history_file_path
+        try:
+            if self.history_file_path == os.path.basename(self.history_file_path):
+                history_file_path = os.path.join(
+                    HISTORY_DIR, self.user_name, self.history_file_path
+                )
+            else:
+                history_file_path = self.history_file_path
+            if not self.history_file_path.endswith(".json"):
+                history_file_path += ".json"
+            with open(history_file_path, "r", encoding="utf-8") as f:
+                saved_json = json.load(f)
+            try:
+                if type(saved_json["history"][0]) == str:
+                    logging.info("历史记录格式为旧版，正在转换……")
+                    new_history = []
+                    for index, item in enumerate(saved_json["history"]):
+                        if index % 2 == 0:
+                            new_history.append(construct_user(item))
+                        else:
+                            new_history.append(construct_assistant(item))
+                    saved_json["history"] = new_history
+                    logging.info(new_history)
+            except:
+                pass
+            if len(saved_json["chatbot"]) < len(saved_json["history"]) // 2:
+                logging.info("Trimming corrupted history...")
+                saved_json["history"] = saved_json["history"][
+                    -len(saved_json["chatbot"]) :
+                ]
+                logging.info(f"Trimmed history: {saved_json['history']}")
+            logging.debug(f"{self.user_name} 加载对话历史完毕")
+            self.history = saved_json["history"]
+            self.single_turn = saved_json.get("single_turn", self.single_turn)
+            self.temperature = saved_json.get("temperature", self.temperature)
+            self.top_p = saved_json.get("top_p", self.top_p)
+            self.n_choices = saved_json.get("n_choices", self.n_choices)
+            self.stop_sequence = list(saved_json.get("stop_sequence", self.stop_sequence))
+            self.token_upper_limit = saved_json.get(
+                "token_upper_limit", self.token_upper_limit
+            )
+            self.max_generation_token = saved_json.get(
+                "max_generation_token", self.max_generation_token
+            )
+            self.presence_penalty = saved_json.get(
+                "presence_penalty", self.presence_penalty
+            )
+            self.frequency_penalty = saved_json.get(
+                "frequency_penalty", self.frequency_penalty
+            )
+            self.logit_bias = saved_json.get("logit_bias", self.logit_bias)
+            self.user_identifier = saved_json.get("user_identifier", self.user_name)
+            self.metadata = saved_json.get("metadata", self.metadata)
+            self.chatbot = saved_json["chatbot"]
+            return (
+                os.path.basename(self.history_file_path)[:-5],
+                saved_json["system"],
+                saved_json["chatbot"],
+                self.single_turn,
+                self.temperature,
+                self.top_p,
+                self.n_choices,
+                ",".join(self.stop_sequence),
+                self.token_upper_limit,
+                self.max_generation_token,
+                self.presence_penalty,
+                self.frequency_penalty,
+                self.logit_bias,
+                self.user_identifier,
+            )
+        except:
+            # 没有对话历史或者对话历史解析失败
+            logging.info(f"没有找到对话历史记录 {self.history_file_path}")
+            self.reset()
+            return (
+                os.path.basename(self.history_file_path),
+                "",
+                [],
+                self.single_turn,
+                self.temperature,
+                self.top_p,
+                self.n_choices,
+                ",".join(self.stop_sequence),
+                self.token_upper_limit,
+                self.max_generation_token,
+                self.presence_penalty,
+                self.frequency_penalty,
+                self.logit_bias,
+                self.user_identifier,
+            )
+
+
 
     def checkConnection(self):
         """

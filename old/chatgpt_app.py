@@ -11,19 +11,37 @@ import uvicorn
 import os
 from langchain.document_loaders import (UnstructuredPowerPointLoader, UnstructuredWordDocumentLoader, PyPDFLoader, UnstructuredFileLoader, CSVLoader, MWDumpLoader)
 from langchain.text_splitter import (RecursiveCharacterTextSplitter, CharacterTextSplitter)
-Configs = utils.Configs
-chatgpt_service = ChatGPT(Configs["Chatgpt"])
+from modules.utils import  get_history_names, get_first_history_name
 app = FastAPI()
-
+Configs = utils.Configs
 text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-
-
+chatgpt_service = ChatGPT(Configs["Chatgpt"])
 
 
 with gr.Blocks(theme=gr.themes.Soft(), title="Chatbot Client", css="./assets/css/GenshinStyle.css",
                js="./assets/js/GenshinStyle.js") as chat_demo:
-# with gr.Blocks(theme=gr.themes.Soft(), title="Chatbot Client") as chat_demo:
     with gr.Row(elem_id="baseContainer"):
+        with gr.Group():
+            with gr.Row(elem_id="history-body"):
+                with gr.Column(scale=6, elem_id="history-select-wrap"):
+                    historySelectList = gr.Radio(
+                        label="从列表中加载对话",
+                        choices=get_history_names(user_name='system'),
+                        value=get_first_history_name(user_name='system'),
+                        # multiselect=False,
+                        container=False,
+                        elem_id="history-select-dropdown"
+                    )
+                with gr.Row(visible=False):
+                    with gr.Column(min_width=42, scale=1):
+                        historyDeleteBtn = gr.Button(
+                            "🗑️", elem_id="gr-history-delete-btn")
+                    with gr.Column(min_width=42, scale=1):
+                        historyDownloadBtn = gr.Button(
+                            "⏬", elem_id="gr-history-download-btn")
+                    with gr.Column(min_width=42, scale=1):
+                        historyMarkdownDownloadBtn = gr.Button(
+                            "⤵️", elem_id="gr-history-mardown-download-btn")
         with gr.Column(min_width=280, elem_id="sideBar"):
             # NLGENUM 是大语言模型列表chatgpt  llama等等 [i.name for i in NLGEnum]
             chatgpt_switch = gr.Dropdown(
@@ -40,7 +58,7 @@ with gr.Blocks(theme=gr.themes.Soft(), title="Chatbot Client", css="./assets/css
                     'moonshot-v1-32k',
                     'moonshot-v1-128k'
                 ],
-                value=chatgpt_service.model, interactive=True,
+                value=Configs['Chatgpt']['gpt_model'], interactive=True,
                 label="选择chatgpt模型", 
                 elem_id="chatpgtSwitch"
             )
@@ -50,10 +68,16 @@ with gr.Blocks(theme=gr.themes.Soft(), title="Chatbot Client", css="./assets/css
                 )
 
             upfile= gr.Files(label="上传文件,支持pdf docx txt等格式", min_width=80, elem_id="upfile")
-            # submit_files_button = gr.Button(value="确定prompt", size="sm", min_width=80, elem_id="submit_files_button")
-
         with gr.Column(scale=5, elem_id="chatPanel"):
-            bot_component = gr.Chatbot(min_width=100,label='聊天框', avatar_images=utils.getAvatars(), elem_id="chatbot")
+            bot_component = gr.Chatbot(
+                min_width=100,
+                label='聊天框', 
+                avatar_images=utils.getAvatars(), 
+                elem_id="chatbot",
+                show_label=False,
+                show_share_button=False,
+                sanitize_html=False,
+            )
             with gr.Row(elem_id="inputPanel"):
                 text_input = gr.Textbox(placeholder="点击输入", show_label=False, scale=4, elem_id="textInput")
                 submit_button = gr.Button(value="发送", size="sm", min_width=80, elem_id="submitButton")
@@ -97,20 +121,15 @@ with gr.Blocks(theme=gr.themes.Soft(), title="Chatbot Client", css="./assets/css
             """
             if not message:
                 return "", chat_history,[]
-            
-            if all([files, prompt]):
-                data = read_data(files)
-                new_message = prompt + '\n' + message + '\n' + str(data)
-            elif files and not prompt:
-                data = read_data(files)
-                new_message = str(data) + '\n' + message
-            elif prompt and not files:
-                new_message = prompt + '\n' + message
+            if files:
+                files_data = str(read_data(files))
             else:
-                new_message = message
+                files_data = ''
+            if not prompt:
+                prompt = ''
             try:
-                bot_message = chatgpt_service.continuedQuery(new_message, chat_history)
-                chat_history.append((message, bot_message))
+                bot_message = chatgpt_service.continuedQuery(files_data, prompt, message, chat_history)
+            
             except RateLimitError as e:
                 gr.Warning(e.body['message'])
             except APIConnectionError as e:
@@ -158,6 +177,17 @@ with gr.Blocks(theme=gr.themes.Soft(), title="Chatbot Client", css="./assets/css
                     gr.Warning("模型切换失败，请检查网络连接或模型配置")
                     return current_service_name
 
+        def load_chat_history(*args):
+            return chatgpt_service.load_chat_history(*args)
+        load_history_from_file_args = dict(
+            fn=load_chat_history,
+            inputs=[historySelectList],
+            outputs=[bot_component],
+        )
+
+        # 聊天历史数据加载
+        historySelectList.input(**load_history_from_file_args)
+
 
         # 按钮绑定事件
         clear_button.click(
@@ -170,7 +200,7 @@ with gr.Blocks(theme=gr.themes.Soft(), title="Chatbot Client", css="./assets/css
         text_input.submit(autoChat, [upfile,prompt,text_input, bot_component], [text_input, bot_component, upfile])
 
         # 切换模型
-        chatgpt_switch.change(switchchatgpt, [chatgpt_switch], [chatgpt_switch])
+        chatgpt_switch.change(switchchatgpt, [chatgpt_switch], [chatgpt_switch,])
  
 app = gr.mount_gradio_app(app, chat_demo, path="/chatbot")
 if __name__ == "__main__":
